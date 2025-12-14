@@ -15,7 +15,7 @@ from tensorflow import keras
 
 # --- 1. CẤU HÌNH ---
 SHEET_NAME = 'ESP32' 
-WORKSHEET_NAME = 'Sheet1' 
+WORKSHEET_NAME = 'ESP32' 
 
 DATABASE_URL = 'https://test-weather-station-default-rtdb.firebaseio.com/' 
 LAT = 10.8231
@@ -246,4 +246,5 @@ def run_forecast():
     print("✅ HOÀN TẤT!")
 
 if __name__ == "__main__":
+
     run_forecast()
