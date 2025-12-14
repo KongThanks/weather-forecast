@@ -1,0 +1,32 @@
+name: Daily Weather Forecast
+
+on:
+  schedule:
+    # Chạy vào 23:00 UTC hàng ngày (tức là 6:00 sáng Việt Nam hôm sau)
+    - cron: '0 23 * * *'
+  workflow_dispatch: # Cho phép bấm nút chạy thủ công để test
+
+jobs:
+  run-forecast:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Lấy code về
+      uses: actions/checkout@v3
+
+    - name: Cài đặt Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10' 
+
+    - name: Cài đặt thư viện
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Tạo file Key bảo mật từ Secret
+      run: |
+        echo "${{ secrets.FIREBASE_KEY_BASE64 }}" | base64 -d > serviceAccountKey.json
+
+    - name: Chạy dự báo
+      run: python daily_forecast.py
