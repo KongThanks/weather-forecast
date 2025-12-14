@@ -132,7 +132,8 @@ def get_hybrid_data():
     
     if df_esp32 is not None and not df_esp32.empty:
         print("⚡ Đang ghép nối: ESP32 + Open-Meteo...")
-        df_esp32_hourly = df_esp32.resample('H').mean()
+        # Đã sửa 'H' thành 'h' để tránh cảnh báo Future Warning
+        df_esp32_hourly = df_esp32.resample('h').mean()
         df_merged = df_esp32_hourly.combine_first(df_meteo)
     else:
         print("⚠️ Dùng 100% dữ liệu Open-Meteo.")
@@ -246,5 +247,4 @@ def run_forecast():
     print("✅ HOÀN TẤT!")
 
 if __name__ == "__main__":
-
     run_forecast()
