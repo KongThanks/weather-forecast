@@ -5,4 +5,6 @@ joblib
 firebase-admin
 gspread
 oauth2client
-tensorflow-cpu
+tensorflow-cpu==2.14.0
+keras==2.14.0
+h5py<3.0.0
