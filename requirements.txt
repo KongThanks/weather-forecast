@@ -2,6 +2,7 @@ numpy<2.0.0
 pandas
 requests
 joblib
+scikit-learn
 firebase-admin
 gspread
 oauth2client
