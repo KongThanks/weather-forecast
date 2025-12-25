@@ -20,7 +20,7 @@ WORKSHEET_NAME = 'ESP32'
 DATABASE_URL = 'https://test-weather-station-default-rtdb.firebaseio.com/' 
 LAT = 10.8231
 LON = 106.6297
-HISTORY_DAYS = 30 
+HISTORY_DAYS = 90 
 FEATURE_COLS = ['Nhiệt độ', 'Độ ẩm', 'Áp suất', 'Tốc độ gió', 'Hướng gió', 'Lượng mưa']
 
 base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -248,3 +248,4 @@ def run_forecast():
 
 if __name__ == "__main__":
     run_forecast()
+
