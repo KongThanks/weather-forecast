@@ -2,9 +2,9 @@ name: Daily Weather Forecast
 
 on:
   schedule:
-    # Chạy vào 23:00 UTC hàng ngày (tức là 6:00 sáng Việt Nam hôm sau)
+    # Chạy vào 23:00 UTC hàng ngày (6:00 Việt Nam)
     - cron: '0 23 * * *'
-  workflow_dispatch: # Cho phép bấm nút chạy thủ công để test
+  workflow_dispatch: #Cho phép chạy thủ công 
 
 jobs:
   run-forecast:
