@@ -168,7 +168,7 @@ def run_forecast():
     current_window = input_scaled.reshape(1, HISTORY_DAYS, 6)
     
     firebase_results = {}
-    print("\n🔮 KẾT QUẢ DỰ BÁO 7 NGÀY TỚI (CHỈ 1 KIỂU THỜI TIẾT):")
+    print("\n🔮 KẾT QUẢ DỰ BÁO 7 NGÀY TỚI:")
     print("="*85)
     
     for i in range(7):
@@ -248,5 +248,6 @@ def run_forecast():
 
 if __name__ == "__main__":
     run_forecast()
+
 
 
