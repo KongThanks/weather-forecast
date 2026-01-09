@@ -48,10 +48,11 @@ def convert_wind_direction(direction_str):
     except:
         return 0
 
-# --- 2. HÀM LẤY DỮ LIỆU NỀN (OPEN-METEO) ---
+# --- 2. HÀM LẤY DỮ LIỆU NỀN (ĐÃ SỬA MÚI GIỜ) ---
 def get_open_meteo_backup():
     print("🌐 Đang tải dữ liệu nền từ Open-Meteo (Backup)...")
-    url = f"https://api.open-meteo.com/v1/forecast?latitude={LAT}&longitude={LON}&hourly=temperature_2m,relative_humidity_2m,rain,surface_pressure,wind_speed_10m,wind_direction_10m&past_days=40&forecast_days=1"
+    # Thêm &timezone=Asia%2FBangkok để khớp giờ VN
+    url = f"https://api.open-meteo.com/v1/forecast?latitude={LAT}&longitude={LON}&hourly=temperature_2m,relative_humidity_2m,rain,surface_pressure,wind_speed_10m,wind_direction_10m&past_days=40&forecast_days=1&timezone=Asia%2FBangkok"
     try:
         r = requests.get(url, timeout=10)
         r.raise_for_status()
@@ -72,7 +73,7 @@ def get_open_meteo_backup():
         print(f"⚠️ Không gọi được Open-Meteo: {e}")
         return None
 
-# --- 3. HÀM LẤY DỮ LIỆU TỪ GOOGLE SHEET ---
+# --- 3. HÀM LẤY DỮ LIỆU TỪ GOOGLE SHEET (ĐÃ SỬA ĐỊNH DẠNG NGÀY) ---
 def get_google_sheet_data():
     print("☁️ Đang tải dữ liệu từ Google Sheet (ESP32)...")
     try:
@@ -82,24 +83,25 @@ def get_google_sheet_data():
         sheet = client.open(SHEET_NAME).worksheet(WORKSHEET_NAME)
         data = sheet.get_all_records()
         
-        if not data: return None
+        if not data: 
+            print("⚠️ Sheet trống trơn!")
+            return None
 
         df = pd.DataFrame(data)
         
         try:
             df['DateTimeStr'] = df['Date'].astype(str) + ' ' + df['Time'].astype(str)
-            df['Ngày'] = pd.to_datetime(df['DateTimeStr'], errors='coerce')
+            
+            # --- QUAN TRỌNG: dayfirst=True ---
+            # Giúp Python hiểu 10/12 là ngày 10 tháng 12 (kiểu VN/Anh) thay vì tháng 10 ngày 12 (kiểu Mỹ)
+            df['Ngày'] = pd.to_datetime(df['DateTimeStr'], dayfirst=True, errors='coerce')
         except Exception as e:
             print(f"⚠️ Lỗi xử lý ngày tháng Sheet: {e}")
             return None
             
         rename_map = {
-            'Temperature': 'Nhiệt độ',
-            'Humidity': 'Độ ẩm',
-            'Pressure': 'Áp suất',
-            'Wind Speed': 'Tốc độ gió',
-            'Wind Direction': 'Hướng gió',
-            'Rainfall': 'Lượng mưa'
+            'Temperature': 'Nhiệt độ', 'Humidity': 'Độ ẩm', 'Pressure': 'Áp suất',
+            'Wind Speed': 'Tốc độ gió', 'Wind Direction': 'Hướng gió', 'Rainfall': 'Lượng mưa'
         }
         df.rename(columns=rename_map, inplace=True)
         
@@ -114,15 +116,17 @@ def get_google_sheet_data():
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors='coerce')
         
-        # --- BỘ LỌC DỮ LIỆU CHẶT CHẼ HƠN ---
-        # Hạ mức lọc nhiệt độ xuống 42 để loại bỏ nhiệt độ ảo do sensor bị nóng
+        # Nới lỏng bộ lọc nhiệt độ lên 50 để test (tránh bị lọc mất khi bạn test nóng)
         df = df[
-            (df['Nhiệt độ'] > 15) & (df['Nhiệt độ'] < 42) & 
-            (df['Độ ẩm'] > 20) & (df['Độ ẩm'] <= 100) &
-            (df['Áp suất'] > 900) & (df['Áp suất'] < 1100)
+            (df['Nhiệt độ'] > 10) & (df['Nhiệt độ'] < 50) & 
+            (df['Độ ẩm'] > 10) & (df['Độ ẩm'] <= 100)
         ]
         
-        print(f"✅ Đã tải và làm sạch {len(df)} dòng dữ liệu từ Sheet.")
+        if len(df) > 0:
+            print(f"✅ Đã tải {len(df)} dòng. Dữ liệu từ: {df.index.min()} -> {df.index.max()}")
+        else:
+            print("⚠️ Đã tải Sheet nhưng lọc xong thì không còn dòng nào (Kiểm tra lại bộ lọc Nhiệt độ/Độ ẩm).")
+
         return df
         
     except Exception as e:
@@ -262,4 +266,5 @@ def run_forecast():
 
 if __name__ == "__main__":
     run_forecast()
+
 
