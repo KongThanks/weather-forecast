@@ -161,7 +161,7 @@ def get_hybrid_data():
     print(f"✅ Dữ liệu đầu vào: {df_final.index[0].date()} -> {df_final.index[-1].date()}")
     return df_final.values
 
-# --- 5. CHẠY DỰ BÁO ---
+# --- 5. CHẠY DỰ BÁO (PHIÊN BẢN CÓ HIỆU CHỈNH NHIỆT ĐỘ) ---
 def run_forecast():
     print("\n--- BẮT ĐẦU QUÁ TRÌNH DỰ BÁO ---")
     print("📥 Đang load Model & Scaler...")
@@ -176,19 +176,20 @@ def run_forecast():
     raw_data = get_hybrid_data()
     if raw_data is None: return
     
-    # Chuẩn hóa
+    # 1. Tính nhiệt độ trung bình thực tế 30 ngày qua
+    avg_temp_input = np.mean(raw_data[:, 0]) # Cột 0 là nhiệt độ
+    print(f"📊 Trung bình 30 ngày qua (Input): {avg_temp_input:.2f}°C")
+
     input_scaled = scaler_features.transform(np.array(raw_data))
-    
-    # --- QUAN TRỌNG: CLIP GIÁ TRỊ VỀ [0, 1] ---
-    # Nếu input thực tế > 39.2 độ, scaler sẽ ra > 1.0. 
-    # Cần ép nó về 1.0 để Model không bị lỗi "bão hòa"
     input_scaled = np.clip(input_scaled, 0, 1)
-    
     current_window = input_scaled.reshape(1, HISTORY_DAYS, 6)
     
     firebase_results = {}
     print("\n🔮 KẾT QUẢ DỰ BÁO 7 NGÀY TỚI:")
     print("="*85)
+    
+    # Danh sách lưu tạm để tính toán hiệu chỉnh
+    temp_predictions = []
     
     for i in range(7):
         try:
@@ -200,26 +201,30 @@ def run_forecast():
             boolean_part = last_6_values[3:]
             
             real_continuous = scaler_targets.inverse_transform([continuous_part])[0]
+            
+            # --- LOGIC HIỆU CHỈNH (BIAS CORRECTION) ---
             val_nhiet = float(real_continuous[0])
+            
+            # Nếu dự báo chênh lệch quá lớn (> 3 độ) so với trung bình quá khứ, kéo nó về gần hơn
+            # Công thức: Dự báo mới = Dự báo cũ - (Chênh lệch * Hệ số làm mềm)
+            bias = val_nhiet - avg_temp_input
+            if bias > 3.0: 
+                correction = (bias - 3.0) * 0.8 # Giảm bớt 80% phần lố
+                val_nhiet = val_nhiet - correction
+                # Đảm bảo không kéo xuống thấp hơn trung bình quá nhiều
+                if val_nhiet < avg_temp_input: val_nhiet = avg_temp_input
+            
+            # Logic các chỉ số khác
             val_am = float(real_continuous[1])
             val_mua = float(real_continuous[2])
             if val_mua < 0: val_mua = 0
 
             max_idx = np.argmax(boolean_part)
-            is_nang = False
-            is_mua = False
-            is_giong = False
-            icon_str = ""
+            is_nang = False; is_mua = False; is_giong = False; icon_str = ""
             
-            if max_idx == 0:
-                is_nang = True
-                icon_str = "☀️ Trời Nắng"
-            elif max_idx == 1:
-                is_mua = True
-                icon_str = "🌧️ Trời Mưa"
-            elif max_idx == 2:
-                is_giong = True
-                icon_str = "⛈️ Có Giông"
+            if max_idx == 0: is_nang = True; icon_str = "☀️ Trời Nắng"
+            elif max_idx == 1: is_mua = True; icon_str = "🌧️ Trời Mưa"
+            elif max_idx == 2: is_giong = True; icon_str = "⛈️ Có Giông"
 
             day_key = f"Day_{i+1}"
             firebase_results[day_key] = {
@@ -231,16 +236,11 @@ def run_forecast():
                 "troiGiong": is_giong
             }
             
-            print(f"📅 {day_key}: "
-                  f"🌡️ {val_nhiet:.1f}°C  |  "
-                  f"💧 {val_am:.1f}%  |  "
-                  f"🌧️ {val_mua:.2f}mm  |  "
-                  f"{icon_str}")
+            print(f"📅 {day_key}: 🌡️ {val_nhiet:.1f}°C (Gốc: {real_continuous[0]:.1f}) | 💧 {val_am:.1f}% | {icon_str}")
 
+            # Cập nhật cửa sổ trượt (Dùng giá trị GỐC để model tự nhiên, không dùng giá trị đã sửa)
             new_row = current_window[0, -1].copy()
-            # Tiếp tục clip giá trị dự báo mới nếu cần
             new_row = np.clip(new_row, 0, 1)
-            
             new_row[0] = continuous_part[0]
             new_row[1] = continuous_part[1]
             new_row[5] = continuous_part[2]
@@ -262,3 +262,4 @@ def run_forecast():
 
 if __name__ == "__main__":
     run_forecast()
+
