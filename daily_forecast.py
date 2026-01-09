@@ -34,14 +34,15 @@ def convert_wind_direction(direction_str):
     try:
         d = str(direction_str).lower().strip()
         mapping = {
-            'bắc': 0, 'b': 0, 'north': 0, 'n': 0,
-            'đông bắc': 45, 'đb': 45, 'ne': 45,
-            'đông': 90, 'đ': 90, 'east': 90, 'e': 90,
-            'đông nam': 135, 'đn': 135, 'se': 135,
+            'bắc': 0, 'b': 0, 'north': 0, 'n': 0, 'bac': 0,
+            'đông bắc': 45, 'đb': 45, 'ne': 45, 'dong bac': 45,
+            'đông': 90, 'đ': 90, 'east': 90, 'e': 90, 'dong': 90,
+            'đông nam': 135, 'đn': 135, 'se': 135, 'dong nam': 135,
             'nam': 180, 'n': 180, 'south': 180, 's': 180,
-            'tây nam': 225, 'tn': 225, 'sw': 225,
-            'tây': 270, 't': 270, 'west': 270, 'w': 270,
-            'tây bắc': 315, 'tb': 315, 'nw': 315
+            'tây nam': 225, 'tn': 225, 'sw': 225, 'tay nam': 225,
+            'tây': 270, 't': 270, 'west': 270, 'w': 270, 'tay': 270,
+            'tây bắc': 315, 'tb': 315, 'nw': 315, 'tay bac': 315,
+            'khong gio': 0, '---': 0, '': 0
         }
         return mapping.get(d, 0)
     except:
@@ -113,10 +114,15 @@ def get_google_sheet_data():
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors='coerce')
         
-        df = df[df['Nhiệt độ'] > 0] 
-        df = df[cols_numeric]
+        # --- BỘ LỌC DỮ LIỆU CHẶT CHẼ HƠN ---
+        # Hạ mức lọc nhiệt độ xuống 42 để loại bỏ nhiệt độ ảo do sensor bị nóng
+        df = df[
+            (df['Nhiệt độ'] > 15) & (df['Nhiệt độ'] < 42) & 
+            (df['Độ ẩm'] > 20) & (df['Độ ẩm'] <= 100) &
+            (df['Áp suất'] > 900) & (df['Áp suất'] < 1100)
+        ]
         
-        print(f"✅ Đã tải {len(df)} dòng dữ liệu từ Sheet.")
+        print(f"✅ Đã tải và làm sạch {len(df)} dòng dữ liệu từ Sheet.")
         return df
         
     except Exception as e:
@@ -132,7 +138,6 @@ def get_hybrid_data():
     
     if df_esp32 is not None and not df_esp32.empty:
         print("⚡ Đang ghép nối: ESP32 + Open-Meteo...")
-        # Đã sửa 'H' thành 'h' để tránh cảnh báo Future Warning
         df_esp32_hourly = df_esp32.resample('h').mean()
         df_merged = df_esp32_hourly.combine_first(df_meteo)
     else:
@@ -146,6 +151,13 @@ def get_hybrid_data():
         return None
         
     df_final = df_daily.iloc[-HISTORY_DAYS:][FEATURE_COLS]
+    
+    # --- DEBUG: KIỂM TRA DỮ LIỆU ĐẦU VÀO ---
+    avg_temp = df_final['Nhiệt độ'].mean()
+    print(f"📊 Thống kê 30 ngày qua (Input): Nhiệt độ TB = {avg_temp:.1f}°C")
+    if avg_temp > 38:
+        print("⚠️ CẢNH BÁO: Nhiệt độ đầu vào quá cao! Có thể cảm biến đang bị nóng.")
+
     print(f"✅ Dữ liệu đầu vào: {df_final.index[0].date()} -> {df_final.index[-1].date()}")
     return df_final.values
 
@@ -164,7 +176,14 @@ def run_forecast():
     raw_data = get_hybrid_data()
     if raw_data is None: return
     
+    # Chuẩn hóa
     input_scaled = scaler_features.transform(np.array(raw_data))
+    
+    # --- QUAN TRỌNG: CLIP GIÁ TRỊ VỀ [0, 1] ---
+    # Nếu input thực tế > 39.2 độ, scaler sẽ ra > 1.0. 
+    # Cần ép nó về 1.0 để Model không bị lỗi "bão hòa"
+    input_scaled = np.clip(input_scaled, 0, 1)
+    
     current_window = input_scaled.reshape(1, HISTORY_DAYS, 6)
     
     firebase_results = {}
@@ -178,7 +197,7 @@ def run_forecast():
             last_6_values = pred_flat[-6:] 
             
             continuous_part = last_6_values[:3]
-            boolean_part = last_6_values[3:] # [Score_Nắng, Score_Mưa, Score_Giông]
+            boolean_part = last_6_values[3:]
             
             real_continuous = scaler_targets.inverse_transform([continuous_part])[0]
             val_nhiet = float(real_continuous[0])
@@ -186,19 +205,12 @@ def run_forecast():
             val_mua = float(real_continuous[2])
             if val_mua < 0: val_mua = 0
 
-            # --- LOGIC MỚI: CHỌN 1 TRONG 3 (MAX SCORE) ---
-            # Tìm xem chỉ số nào (0, 1 hay 2) có điểm cao nhất
             max_idx = np.argmax(boolean_part)
-            
-            # Reset tất cả về False
             is_nang = False
             is_mua = False
             is_giong = False
-            
             icon_str = ""
             
-            # Gán True cho người chiến thắng
-            # Giả định thứ tự là [Nắng, Mưa, Giông]
             if max_idx == 0:
                 is_nang = True
                 icon_str = "☀️ Trời Nắng"
@@ -219,7 +231,6 @@ def run_forecast():
                 "troiGiong": is_giong
             }
             
-            # Hiển thị Terminal gọn gàng
             print(f"📅 {day_key}: "
                   f"🌡️ {val_nhiet:.1f}°C  |  "
                   f"💧 {val_am:.1f}%  |  "
@@ -227,6 +238,9 @@ def run_forecast():
                   f"{icon_str}")
 
             new_row = current_window[0, -1].copy()
+            # Tiếp tục clip giá trị dự báo mới nếu cần
+            new_row = np.clip(new_row, 0, 1)
+            
             new_row[0] = continuous_part[0]
             new_row[1] = continuous_part[1]
             new_row[5] = continuous_part[2]
@@ -248,6 +262,3 @@ def run_forecast():
 
 if __name__ == "__main__":
     run_forecast()
-
-
-
